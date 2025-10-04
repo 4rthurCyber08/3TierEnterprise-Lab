@@ -350,3 +350,27 @@ conf t
   channel-group 223 mode active
   channel-protocol lacp
   end
+
+
+
+9. STP - PVST 802.1D
+
+
+10. STP - RSTP 802.1W
+
+
+11. STP - MST 802.1S
+
+
+12. FHRP - HSRP
+
+
+13. VRRP
+
+
+14. GLBP
+
+
+15. IP SLA
+
+16. SPAN & RSPAN
