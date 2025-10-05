@@ -1,14 +1,52 @@
 
 Secret: pass
 
-1. Identify ports using CDP or LLDP
+---
 
-!@Device
+## DISCOVERY PROTOCOL
+
+### On Prem vs MSP
+Identify port connections between switches using the Cisco Proprietary Discovery Protocol
+
+!@Switches
 show cdp neighbor
 
-2. Create VLAN 120, named DATA.
+### SECURITY Best Practice
+Disable CDP on Access Switches
+Enable LLDP on Access Switches but only transmit LLDP traffic to D1 & D2
 
-3. Configure 802.1q between switches. Allow all VLANs. Specify DATA VLAN as untagged.
+--
+
+Disable CDP on Distribution Switches towards access switches
+Enable LLDP on D1 & D2
+But only allow recieving traffic from A1,A2,A3
+Transmit to C1 & C2 but do not recieve
+
+--
+
+On C1 & C2, Enable CDP, and LLDP, do not transmit to D1 & D2 or E1
+
+
+
+
+---
+
+## ACCESS vs TRUNK
+
+### TAGGED vs UNTAGGED Traffic
+Create VLAN 120, named UNTAGGED.
+
+!@Switches
+conf t
+ vlan 120
+  name UNTAGGED
+  end
+  
+
+Configure Open Standard Protocol for Trunking between switches with the following settings.
+- Allow all VLANs. 
+- Specify DATA VLAN as untagged.
+- Set a description on ports to identify connection
 
 !@C1, C2
 conf t
@@ -47,7 +85,9 @@ conf t
   switchport trunk allowed vlan all
   switchport trunk native vlan 120
   end
-  
+show int trunk
+show int desc
+
 !@A1,A2,A3
 conf t
  int range e1/1-2
@@ -62,9 +102,129 @@ conf t
   switchport trunk allowed vlan all
   switchport trunk native vlan 120
   end
+show int trunk
+show int desc
 
 
-4. Configure VTP Domain CCNP on all Switches
+---
+
+### IP ADDRESSING
+## STATIC
+Assign IP Addresses on PCs based on their specified VLAN.
+- Make sure PCs can communicate with C1 & C2 (Gateway)
+
+!@P1
+conf t
+ int e0/0
+  no shut
+  ip add 10.1.10.101 255.255.255.224
+  end
+
+!@P2
+conf t
+ int e0/0
+  no shut
+  ip add 192.168.30.113 255.255.255.248
+  end
+
+!@P3
+conf t
+ int e0/0
+  no shut
+  ip add 10.1.20.60 255.255.255.240
+  end
+
+!@P4
+conf t
+ int e0/0
+  ip add 10.1.10.102 255.255.255.224
+  no shut
+  end
+
+
+### Configure VLAN DATA with an IP address of 
+208.8.8.101 on C1
+208.8.8.102 on C2
+
+Assign RSTVM to VLAN DATA only
+
+!@A3
+conf t
+ int e3/3
+  no shut
+  switchport mode access
+  switchport access vlan 120
+  end
+
+
+Enable Wireshark to capture traffic from VMNet8
+
+---
+
+### DHCP
+Configure DHCP Pool for SALES:
+- Use the IP address 192.168.50.0/24
+- Reserve the First 100 IPs
+- Apply the First Valid IP on C1, last Valid on C2
+- Load balance between C1 & C2 
+  - C1 - 1   - 100 IPs
+  - C2 - 200 - 253 IPs
+- Set the Domain name to SALES.COM
+- The default Gateway must be C1 or C2 per pool
+
+- Finally, configure P5 as a dhcp client
+  
+
+!@C1
+conf t
+ int vlan 50
+  no shut
+  ip add 192.168.50.1 255.255.255.0
+  exit
+ ip dhcp excluded-address 192.168.50.1 192.168.50.100
+ ip dhcp pool SALES.COM
+  network 192.168.50.0 255.255.255.0
+  default-router 192.168.50.1
+  domain-name SALES.COM
+  end
+
+!@C2
+conf t
+ int vlan 50
+  no shut
+  ip add 192.168.50.254 255.255.255.0
+  exit
+ ip dhcp excluded-address 192.168.50.1 192.168.50.200
+ ip dhcp pool SALES.COM
+  network 192.168.50.0 255.255.255.0
+  default-router 192.168.50.254
+  domain-name SALES.COM
+  end
+
+
+!@P5
+conf t
+ int e0/0
+  no shut
+  ip add dhcp
+  end
+
+
+DHCP States:
+1.
+2.
+3.
+4.
+
+What type of data traffic is each state? (Unicast, Broadcast, Multicast)
+Base on Wireshark.
+
+
+---
+
+
+## VLAN PROPAGATION
+### Configure VTP Domain CCNP on all Switches
 - VTP Version 2
 - VTP mode server (C1, C2) client (D1, D2, A1, A2, A3, A4)
 - VTP password C1sc0123
@@ -85,15 +245,15 @@ conf t
  vtp password C1sc0123
  end
 
-5. Verify by creating VLANs 12 (NETWORK) & 13 (SECURITY)
+### Verify by creating VLANs 12 (NETWORK) & 13 (SECURITY)
 
 !@C1 or C2
 conf t
  vlan 12
-  name NETWORK
+  name NOC
   exit
  vlan 13
-  name SECURITY
+  name SOC
   exit
   end
 
@@ -101,7 +261,7 @@ conf t
 show vlan brief
 
 
-6. WARNING, Dangers of VTP Revision Number
+### WARNING, Dangers of VTP Revision Number
 
 !@A4
 conf t
@@ -147,7 +307,7 @@ conf t
 show vtp status
 
 
-7. Fix the VLANs by configuring VTP Version 3
+### Fix the VLANs by configuring VTP Version 3
 
 !@C1,C2
 conf t
@@ -228,16 +388,55 @@ vlan 120
  name DATA
 !
 vlan 11
- name NETWORK
+ name NOC
 !
 vlan 12
- name SECURITY
+ name SOC
  end
  
 
+---
 
 
-8. Configure Etherchannel
+## SPANNING TREE PROTOCOL
+### 802.1D
+Configure C1 as Primary & C2 as secondary
+
+!@C1
+conf t
+ spanning-tree mode pvst
+ spanning-tree vlan 120 root primary
+ end
+show spanning-tree vlan 120
+ 
+ 
+!@C2
+conf t
+ spanning-tree mode pvst
+ spanning-tree vlan 120 root secondary
+ end
+show spanning-tree vlan 120
+
+
+$$$$$$$$$$$$$$$4
+$$$$$$$$$$$$$
+
+### 802.1W
+Configure Rapid PVST on all switches, and make sure ports connected to end devices are configured for Portfast EDGE
+- Set the metric cost
+
+
+
+### 802.1S
+Configure MST to load balance STP Management between C1 & C2
+
+
+
+---
+
+
+## ETHERCHANNEL
+### Configure Etherchannel
 
 C1-C2 = Po102
 C1-D1 = Po11
@@ -350,27 +549,27 @@ conf t
   channel-group 223 mode active
   channel-protocol lacp
   end
+  
+  
+---
+
+### REVIEW OF ROUTING - Why can't END Devices ping 8.8.8.8 ?
+
+
+## FIRST HOP REDUNDANCY PROTOCOL
+### HSRP
+Use track
+
+### VRRP
+Use EEM
+
+
+### GLBP
+Use IP SLA
 
 
 
-9. STP - PVST 802.1D
+---
 
+### DHCPv6
 
-10. STP - RSTP 802.1W
-
-
-11. STP - MST 802.1S
-
-
-12. FHRP - HSRP
-
-
-13. VRRP
-
-
-14. GLBP
-
-
-15. IP SLA
-
-16. SPAN & RSPAN
